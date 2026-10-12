@@ -331,6 +331,132 @@ def asignar_item_a_placas_perdidas(df, mapa_items):
     )
 
     return df
+# ============================================================
+# COMPARAR PLACAS QUE NO REPORTARON KILOMETRAJE
+# ============================================================
+
+def obtener_placas_no_reportadas(
+    df_reportado,
+    id_spreadsheet,
+    hojas_origen
+):
+    cliente = conectar_google()
+    archivo = cliente.open_by_key(id_spreadsheet)
+
+    # Placas existentes en la hoja de reporte
+    placas_reportadas = set()
+
+    if "Placa" in df_reportado.columns:
+        placas_reportadas = {
+            normalizar_placa(placa)
+            for placa in df_reportado["Placa"]
+            if normalizar_placa(placa)
+        }
+
+    placas_origen = {}
+
+    for nombre_hoja in hojas_origen:
+        try:
+            hoja = archivo.worksheet(nombre_hoja)
+
+            valores = hoja.get(
+                "B2:B",
+                value_render_option="FORMATTED_VALUE"
+            )
+
+            for fila in valores:
+                if not fila:
+                    continue
+
+                placa_original = str(fila[0]).strip()
+                placa_normalizada = normalizar_placa(
+                    placa_original
+                )
+
+                if not placa_normalizada:
+                    continue
+
+                if placa_normalizada not in placas_origen:
+                    placas_origen[placa_normalizada] = {
+                        "Placa": placa_original,
+                        "Hojas de origen": []
+                    }
+
+                if nombre_hoja not in placas_origen[
+                    placa_normalizada
+                ]["Hojas de origen"]:
+                    placas_origen[placa_normalizada][
+                        "Hojas de origen"
+                    ].append(nombre_hoja)
+
+        except gspread.WorksheetNotFound:
+            st.warning(
+                f"No se encontró la hoja '{nombre_hoja}'."
+            )
+
+    # Placas maestras que no aparecen en el reporte
+    filas = []
+
+    for placa_normalizada, datos in placas_origen.items():
+        if placa_normalizada not in placas_reportadas:
+            filas.append({
+                "Placa": datos["Placa"],
+                "Hojas de origen": " / ".join(
+                    datos["Hojas de origen"]
+                ),
+                "Estado": "🔴 NO REPORTÓ KILOMETRAJE"
+            })
+
+    resultado = pd.DataFrame(
+        filas,
+        columns=[
+            "Placa",
+            "Hojas de origen",
+            "Estado"
+        ]
+    )
+
+    if not resultado.empty:
+        resultado = resultado.sort_values(
+            "Placa"
+        ).reset_index(drop=True)
+
+    return resultado
+
+
+def mostrar_tabla_no_reportadas(df_no_reportadas, titulo):
+    st.markdown("---")
+    st.markdown(f"### 🚨 {titulo}")
+
+    st.metric(
+        "Placas que no reportaron",
+        len(df_no_reportadas)
+    )
+
+    if df_no_reportadas.empty:
+        st.success(
+            "Todas las placas de las hojas de origen "
+            "figuran en la hoja de reporte."
+        )
+        return
+
+    st.dataframe(
+        df_no_reportadas,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    csv = df_no_reportadas.to_csv(
+        index=False
+    ).encode("utf-8-sig")
+
+    st.download_button(
+        "📥 Descargar placas no reportadas",
+        data=csv,
+        file_name="placas_no_reportadas.csv",
+        mime="text/csv",
+        key=f"descargar_no_reportadas_{titulo}",
+    )
 
 
 # ============================================================
@@ -957,6 +1083,62 @@ else:
         df_filtrado,
         columnas_mostrar
     )
+    # ============================================================
+    # TABLA DE PLACAS QUE NO REPORTARON - AMBOS MÓDULOS
+    # ============================================================
+    
+    try:
+    
+        if modulo == "🚗 KM_PÉRDIDAS":
+    
+            # Comparar ControlPerdidas contra las seis hojas
+            df_no_reportadas = obtener_placas_no_reportadas(
+                df_reportado=df,
+                id_spreadsheet=st.secrets[
+                    "SPREADSHEET_ID_PERDIDAS"
+                ],
+                hojas_origen=[
+                    "TingoMaria",
+                    "Huanuco",
+                    "Pasco",
+                    "Facturacion",
+                    "Sedapal",
+                    "Hidrandina"
+                ]
+            )
+    
+            mostrar_tabla_no_reportadas(
+                df_no_reportadas,
+                "KM_PÉRDIDAS - PLACAS QUE NO REPORTARON"
+            )
+    
+        elif modulo == "🛻 KM_DISTRIBUCIÓN":
+    
+            # Comparar Distribucion contra ITEM_IV, ITEM_III e ITEM_II
+            df_no_reportadas = obtener_placas_no_reportadas(
+                df_reportado=df,
+                id_spreadsheet=st.secrets[
+                    "SPREADSHEET_ID_DISTRIBUCION"
+                ],
+                hojas_origen=[
+                    "ITEM_IV",
+                    "ITEM_III",
+                    "ITEM_II"
+                ]
+            )
+    
+            mostrar_tabla_no_reportadas(
+                df_no_reportadas,
+                "DISTRIBUCIÓN - PLACAS QUE NO REPORTARON"
+            )
+    
+    except Exception as e:
+        st.error(
+            "No se pudo generar la tabla de placas "
+            "que no están reportando kilometraje."
+        )
+        st.exception(e)
+
 
 
 # ============================================================
