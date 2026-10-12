@@ -37,7 +37,17 @@ HOJAS_ITEMS = [
 NOMBRE_COLUMNA_ITEM_PLACA = "Ítem de la placa"
 # Archivo KM_PERDIDAS
 NOMBRE_HOJA_PERDIDAS = "ControlPerdidas"
+# Hojas donde se identificará el ítem de cada placa
+HOJAS_ITEMS_PERDIDAS = [
+    "TingoMaria",
+    "Huanuco",
+    "Pasco",
+    "Facturacion",
+    "Sedapal",
+    "Hidrandina"
+]
 
+NOMBRE_COLUMNA_ITEM_PLACA = "Ítem de la placa"
 
 # ============================================================
 # CONEXIÓN GOOGLE SHEETS
@@ -240,6 +250,87 @@ COLUMNAS_PERDIDAS = [
     "Ubicacion Final",
     "Observacion"
 ]
+# ============================================================
+# IDENTIFICAR EL ÍTEM DE CADA PLACA - KM_PÉRDIDAS
+# ============================================================
+
+def normalizar_placa(valor):
+    """Normaliza placas para evitar diferencias de formato."""
+
+    if pd.isna(valor):
+        return ""
+
+    return re.sub(
+        r"[^A-Z0-9]",
+        "",
+        str(valor).strip().upper()
+    )
+
+
+def obtener_mapa_items_perdidas():
+    """
+    Consulta la columna B de las hojas:
+    TingoMaria, Huanuco, Pasco, Facturacion,
+    Sedapal e Hidrandina.
+
+    Devuelve un diccionario de placa -> hoja encontrada.
+    """
+
+    cliente = conectar_google()
+
+    archivo = cliente.open_by_key(
+        st.secrets["SPREADSHEET_ID_PERDIDAS"]
+    )
+
+    mapa_items = {}
+
+    for nombre_hoja in HOJAS_ITEMS_PERDIDAS:
+
+        try:
+            hoja_item = archivo.worksheet(nombre_hoja)
+
+            placas = hoja_item.get(
+                "B2:B",
+                value_render_option="FORMATTED_VALUE"
+            )
+
+            for fila in placas:
+
+                if not fila:
+                    continue
+
+                placa = normalizar_placa(fila[0])
+
+                if not placa:
+                    continue
+
+                if placa not in mapa_items:
+                    mapa_items[placa] = []
+
+                if nombre_hoja not in mapa_items[placa]:
+                    mapa_items[placa].append(nombre_hoja)
+
+        except gspread.WorksheetNotFound:
+            st.warning(
+                f"No se encontró la hoja '{nombre_hoja}' "
+                "en el archivo de KM_PÉRDIDAS."
+            )
+
+    return mapa_items
+
+
+def asignar_item_a_placas_perdidas(df, mapa_items):
+    """Agrega la columna Ítem de la placa al DataFrame."""
+
+    df = df.copy()
+
+    df[NOMBRE_COLUMNA_ITEM_PLACA] = df["Placa"].apply(
+        lambda placa: " / ".join(
+            mapa_items.get(normalizar_placa(placa), [])
+        ) or "NO IDENTIFICADA"
+    )
+
+    return df
 
 
 # ============================================================
@@ -766,6 +857,7 @@ else:
     columnas_mostrar = [
         "Fecha",
         "Placa",
+        "Ítem de la placa",
         "Km Inicial",
         "Km Final",
         "Tot Recorrido",
@@ -814,6 +906,17 @@ try:
         mapa_items = obtener_mapa_items()
 
         df = asignar_item_a_placas(
+            df,
+            mapa_items
+        )
+
+    df = preparar_datos(df)
+
+    if modulo == "🚗 KM_PÉRDIDAS":
+
+        mapa_items = obtener_mapa_items_perdidas()
+
+        df = asignar_item_a_placas_perdidas(
             df,
             mapa_items
         )
