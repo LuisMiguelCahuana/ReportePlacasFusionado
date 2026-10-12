@@ -635,7 +635,6 @@ if modulo == "🛻 KM_DISTRIBUCIÓN":
     titulo_modulo = "MONITOR DE KILOMETRAJE DISTRIBUCIÓN"
 
     columnas = COLUMNAS_DISTRIBUCION
-
     columnas_mostrar = [
         "Fecha",
         "Placa",
@@ -646,19 +645,9 @@ if modulo == "🛻 KM_DISTRIBUCIÓN":
         "Tot Recorrido",
         "Nom Personal",
         "Celular",
-        "Cuadrilla",
-        "Item",
         "Unidad Negocio",
-        "Servicio Electrico",
         "Nº OM | Cod. Recibo",
-        "Descripcion Actividad",
-        "CECO",
-        "Estado",
-        "📷 KM Inicial",
-        "📷 KM Final",
-        "📍 Ubicación Inicial",
-        "📍 Ubicación Final",
-        "Observacion"
+        "Descripcion Actividad"
     ]
 
     funcion_obtener_hoja = obtener_hoja_distribucion
@@ -673,26 +662,15 @@ else:
     titulo_modulo = "MONITOR DE KILOMETRAJES KM_PERDIDAS"
 
     columnas = COLUMNAS_PERDIDAS
-
     columnas_mostrar = [
         "Fecha",
         "Placa",
-        "Nom Personal",
-        "Celular",
-        "Cuadrilla",
-        "Item",
-        "Unidad Negocio",
-        "Servicio Electrico",
-        "CECO",
         "Km Inicial",
         "Km Final",
         "Tot Recorrido",
-        "Estado",
-        "📷 KM Inicial",
-        "📷 KM Final",
-        "📍 Ubicación Inicial",
-        "📍 Ubicación Final",
-        "Observacion"
+        "Nom Personal",
+        "Celular",
+        "Unidad Negocio"
     ]
 
     funcion_obtener_hoja = obtener_hoja_perdidas
