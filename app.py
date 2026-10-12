@@ -49,9 +49,6 @@ HOJAS_ITEMS_PERDIDAS = [
 
 NOMBRE_COLUMNA_ITEM_PLACA = "Ítem de la placa"
 
-# ============================================================
-# CONEXIÓN GOOGLE SHEETS
-# ============================================================
 
 @st.cache_resource
 def conectar_google():
@@ -59,148 +56,52 @@ def conectar_google():
         st.secrets["gcp_service_account"],
         scopes=SCOPES
     )
-
     return gspread.authorize(credenciales)
 
 
-def obtener_hoja_distribucion():
+@st.cache_resource
+def obtener_archivo_distribucion():
     cliente = conectar_google()
-
-    archivo = cliente.open_by_key(
+    return cliente.open_by_key(
         st.secrets["SPREADSHEET_ID_DISTRIBUCION"]
     )
 
-    return archivo.worksheet(
-        NOMBRE_HOJA_DISTRIBUCION
-    )
 
-# ============================================================
-# IDENTIFICAR EL ÍTEM AL QUE PERTENECE CADA PLACA
-# ============================================================
-
-def normalizar_placa(valor):
-    """
-    Normaliza la placa para evitar diferencias por
-    mayúsculas, espacios o guiones.
-    """
-    if pd.isna(valor):
-        return ""
-
-    return re.sub(
-        r"[^A-Z0-9]",
-        "",
-        str(valor).strip().upper()
-    )
-
-
-def obtener_mapa_items():
-    """
-    Lee la columna B de ITEM_IV, ITEM_III e ITEM_II
-    y construye un diccionario placa -> ítem.
-    """
-
+@st.cache_resource
+def obtener_archivo_perdidas():
     cliente = conectar_google()
-
-    archivo = cliente.open_by_key(
-        st.secrets["SPREADSHEET_ID_DISTRIBUCION"]
-    )
-
-    mapa_items = {}
-
-    for nombre_hoja in HOJAS_ITEMS:
-
-        try:
-            hoja_item = archivo.worksheet(nombre_hoja)
-
-            # Leer las placas de la columna B, desde la fila 2.
-            placas = hoja_item.get(
-                "B2:B",
-                value_render_option="FORMATTED_VALUE"
-            )
-
-            for fila in placas:
-
-                if not fila:
-                    continue
-
-                placa_original = str(fila[0]).strip()
-                placa_normalizada = normalizar_placa(
-                    placa_original
-                )
-
-                if not placa_normalizada:
-                    continue
-
-                if placa_normalizada not in mapa_items:
-                    mapa_items[placa_normalizada] = []
-
-                if nombre_hoja not in mapa_items[placa_normalizada]:
-                    mapa_items[placa_normalizada].append(
-                        nombre_hoja
-                    )
-
-        except gspread.WorksheetNotFound:
-            st.warning(
-                f"No se encontró la hoja {nombre_hoja} "
-                "en el archivo de distribución."
-            )
-
-    return mapa_items
-
-
-def asignar_item_a_placas(df, mapa_items):
-    """
-    Agrega a cada registro de Distribucion el ítem
-    correspondiente a su placa.
-    """
-
-    df = df.copy()
-
-    df[NOMBRE_COLUMNA_ITEM_PLACA] = df["Placa"].apply(
-        lambda placa: " / ".join(
-            mapa_items.get(
-                normalizar_placa(placa),
-                []
-            )
-        ) or "NO IDENTIFICADA"
-    )
-
-    return df
-
-
-def obtener_hoja_perdidas():
-    cliente = conectar_google()
-
-    archivo = cliente.open_by_key(
+    return cliente.open_by_key(
         st.secrets["SPREADSHEET_ID_PERDIDAS"]
     )
 
-    # Buscar la hoja ignorando espacios,
-    # guiones, guiones bajos y mayúsculas.
-    def normalizar_nombre(nombre):
-        return re.sub(
-            r"[^a-z0-9]",
-            "",
-            nombre.strip().lower()
-        )
+@st.cache_resource
+def obtener_hoja_distribucion():
+    archivo = obtener_archivo_distribucion()
+    return archivo.worksheet(NOMBRE_HOJA_DISTRIBUCION)
+@st.cache_resource
+def obtener_hoja_perdidas():
+    archivo = obtener_archivo_perdidas()
+    return archivo.worksheet(NOMBRE_HOJA_PERDIDAS)
 
-    nombre_buscado = normalizar_nombre(
-        NOMBRE_HOJA_PERDIDAS
+    nombre_buscado = re.sub(
+        r"[^a-z0-9]",
+        "",
+        NOMBRE_HOJA_PERDIDAS.strip().lower()
     )
 
     for hoja in archivo.worksheets():
-        if normalizar_nombre(hoja.title) == nombre_buscado:
+        nombre_actual = re.sub(
+            r"[^a-z0-9]",
+            "",
+            hoja.title.strip().lower()
+        )
+
+        if nombre_actual == nombre_buscado:
             return hoja
 
-    nombres_disponibles = [
-        hoja.title for hoja in archivo.worksheets()
-    ]
-
     raise ValueError(
-        f"No se encontró la hoja '{NOMBRE_HOJA_PERDIDAS}'. "
-        f"Hojas disponibles: {nombres_disponibles}"
+        f"No se encontró la hoja '{NOMBRE_HOJA_PERDIDAS}'."
     )
-
 
 # ============================================================
 # ENCABEZADOS DE LAS DOS BASES DE DATOS
@@ -250,42 +151,13 @@ COLUMNAS_PERDIDAS = [
     "Ubicacion Final",
     "Observacion"
 ]
-# ============================================================
-# IDENTIFICAR EL ÍTEM DE CADA PLACA - KM_PÉRDIDAS
-# ============================================================
 
-def normalizar_placa(valor):
-    """Normaliza placas para evitar diferencias de formato."""
-
-    if pd.isna(valor):
-        return ""
-
-    return re.sub(
-        r"[^A-Z0-9]",
-        "",
-        str(valor).strip().upper()
-    )
-
-
-def obtener_mapa_items_perdidas():
-    """
-    Consulta la columna B de las hojas:
-    TingoMaria, Huanuco, Pasco, Facturacion,
-    Sedapal e Hidrandina.
-
-    Devuelve un diccionario de placa -> hoja encontrada.
-    """
-
-    cliente = conectar_google()
-
-    archivo = cliente.open_by_key(
-        st.secrets["SPREADSHEET_ID_PERDIDAS"]
-    )
-
+@st.cache_data(ttl=300, show_spinner=False)
+def obtener_mapa_items():
+    archivo = obtener_archivo_distribucion()
     mapa_items = {}
 
-    for nombre_hoja in HOJAS_ITEMS_PERDIDAS:
-
+    for nombre_hoja in HOJAS_ITEMS:
         try:
             hoja_item = archivo.worksheet(nombre_hoja)
 
@@ -295,7 +167,6 @@ def obtener_mapa_items_perdidas():
             )
 
             for fila in placas:
-
                 if not fila:
                     continue
 
@@ -311,10 +182,64 @@ def obtener_mapa_items_perdidas():
                     mapa_items[placa].append(nombre_hoja)
 
         except gspread.WorksheetNotFound:
-            st.warning(
-                f"No se encontró la hoja '{nombre_hoja}' "
-                "en el archivo de KM_PÉRDIDAS."
+            continue
+
+    return mapa_items
+
+
+def asignar_item_a_placas(df, mapa_items):
+    df = df.copy()
+
+    df[NOMBRE_COLUMNA_ITEM_PLACA] = df["Placa"].apply(
+        lambda placa: " / ".join(
+            mapa_items.get(normalizar_placa(placa), [])
+        ) or "NO IDENTIFICADA"
+    )
+
+    return df
+
+def normalizar_placa(valor):
+    if pd.isna(valor):
+        return ""
+
+    return re.sub(
+        r"[^A-Z0-9]",
+        "",
+        str(valor).strip().upper()
+    )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def obtener_mapa_items_perdidas():
+    archivo = obtener_archivo_perdidas()
+    mapa_items = {}
+
+    for nombre_hoja in HOJAS_ITEMS_PERDIDAS:
+        try:
+            hoja_item = archivo.worksheet(nombre_hoja)
+
+            placas = hoja_item.get(
+                "B2:B",
+                value_render_option="FORMATTED_VALUE"
             )
+
+            for fila in placas:
+                if not fila:
+                    continue
+
+                placa = normalizar_placa(fila[0])
+
+                if not placa:
+                    continue
+
+                if placa not in mapa_items:
+                    mapa_items[placa] = []
+
+                if nombre_hoja not in mapa_items[placa]:
+                    mapa_items[placa].append(nombre_hoja)
+
+        except gspread.WorksheetNotFound:
+            continue
 
     return mapa_items
 
@@ -334,7 +259,7 @@ def asignar_item_a_placas_perdidas(df, mapa_items):
 # ============================================================
 # COMPARAR PLACAS QUE NO REPORTARON KILOMETRAJE
 # ============================================================
-
+@st.cache_data(ttl=300, show_spinner=False)
 def obtener_placas_no_reportadas(
     df_reportado,
     id_spreadsheet,
@@ -972,7 +897,7 @@ if modulo == "🛻 KM_DISTRIBUCIÓN":
 
     texto_fuente = (
         "Los datos se consultan desde el archivo "
-        "configurado en SPREADSHEET_ID_PERDIDAS."
+        "configurado en SPREADSHEET_ID_DISTRIBUCION."
     )
 
 else:
@@ -997,7 +922,7 @@ else:
     texto_fuente = (
         "Los datos se consultan desde la hoja "
         "ControlPerdidas del archivo configurado "
-        "en SPREADSHEET_ID."
+        "en SPREADSHEET_ID_PERDIDAS."
     )
 
 
@@ -1025,10 +950,7 @@ try:
 
     df = preparar_datos(df)
 
-    # Identificar el ítem de cada placa únicamente
-    # en el módulo KM_DISTRIBUCIÓN.
     if modulo == "🛻 KM_DISTRIBUCIÓN":
-
         mapa_items = obtener_mapa_items()
 
         df = asignar_item_a_placas(
@@ -1036,10 +958,7 @@ try:
             mapa_items
         )
 
-    df = preparar_datos(df)
-
-    if modulo == "🚗 KM_PÉRDIDAS":
-
+    elif modulo == "🚗 KM_PÉRDIDAS":
         mapa_items = obtener_mapa_items_perdidas()
 
         df = asignar_item_a_placas_perdidas(
@@ -1049,22 +968,10 @@ try:
 
 except Exception as e:
     st.error(
-        "❌ No se pudo conectar con Google Sheets. "
-        "Verifique los secretos, el nombre del archivo "
-        "y los permisos de la cuenta de servicio."
+        "No se pudieron consultar los datos de Google Sheets. "
+        "Si aparece el error 429, espere un momento y vuelva "
+        "a actualizar."
     )
-
-    st.exception(e)
-    st.stop()
-
-
-except Exception as e:
-    st.error(
-        "❌ No se pudo conectar con Google Sheets. "
-        "Verifique los secretos, el nombre del archivo "
-        "y los permisos de la cuenta de servicio."
-    )
-
     st.exception(e)
     st.stop()
 
@@ -1154,6 +1061,7 @@ with col_actualizar:
         "🔄 Actualizar",
         use_container_width=True
     ):
+        st.cache_data.clear()
         st.rerun()
 
 with col_info:
