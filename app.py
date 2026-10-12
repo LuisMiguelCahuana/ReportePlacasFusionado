@@ -27,7 +27,14 @@ SCOPES = [
 # Archivo KM_DISTRIBUCION
 NOMBRE_ARCHIVO_DISTRIBUCION = "KM_DISTRIBUCION"
 NOMBRE_HOJA_DISTRIBUCION = "Distribucion"
+# Hojas donde se encuentran las placas de cada ítem
+HOJAS_ITEMS = [
+    "ITEM_IV",
+    "ITEM_III",
+    "ITEM_II"
+]
 
+NOMBRE_COLUMNA_ITEM_PLACA = "Ítem de la placa"
 # Archivo KM_PERDIDAS
 NOMBRE_HOJA_PERDIDAS = "ControlPerdidas"
 
@@ -56,6 +63,99 @@ def obtener_hoja_distribucion():
     return archivo.worksheet(
         NOMBRE_HOJA_DISTRIBUCION
     )
+
+# ============================================================
+# IDENTIFICAR EL ÍTEM AL QUE PERTENECE CADA PLACA
+# ============================================================
+
+def normalizar_placa(valor):
+    """
+    Normaliza la placa para evitar diferencias por
+    mayúsculas, espacios o guiones.
+    """
+    if pd.isna(valor):
+        return ""
+
+    return re.sub(
+        r"[^A-Z0-9]",
+        "",
+        str(valor).strip().upper()
+    )
+
+
+def obtener_mapa_items():
+    """
+    Lee la columna B de ITEM_IV, ITEM_III e ITEM_II
+    y construye un diccionario placa -> ítem.
+    """
+
+    cliente = conectar_google()
+
+    archivo = cliente.open_by_key(
+        st.secrets["SPREADSHEET_ID_DISTRIBUCION"]
+    )
+
+    mapa_items = {}
+
+    for nombre_hoja in HOJAS_ITEMS:
+
+        try:
+            hoja_item = archivo.worksheet(nombre_hoja)
+
+            # Leer las placas de la columna B, desde la fila 2.
+            placas = hoja_item.get(
+                "B2:B",
+                value_render_option="FORMATTED_VALUE"
+            )
+
+            for fila in placas:
+
+                if not fila:
+                    continue
+
+                placa_original = str(fila[0]).strip()
+                placa_normalizada = normalizar_placa(
+                    placa_original
+                )
+
+                if not placa_normalizada:
+                    continue
+
+                if placa_normalizada not in mapa_items:
+                    mapa_items[placa_normalizada] = []
+
+                if nombre_hoja not in mapa_items[placa_normalizada]:
+                    mapa_items[placa_normalizada].append(
+                        nombre_hoja
+                    )
+
+        except gspread.WorksheetNotFound:
+            st.warning(
+                f"No se encontró la hoja {nombre_hoja} "
+                "en el archivo de distribución."
+            )
+
+    return mapa_items
+
+
+def asignar_item_a_placas(df, mapa_items):
+    """
+    Agrega a cada registro de Distribucion el ítem
+    correspondiente a su placa.
+    """
+
+    df = df.copy()
+
+    df[NOMBRE_COLUMNA_ITEM_PLACA] = df["Placa"].apply(
+        lambda placa: " / ".join(
+            mapa_items.get(
+                normalizar_placa(placa),
+                []
+            )
+        ) or "NO IDENTIFICADA"
+    )
+
+    return df
 
 
 def obtener_hoja_perdidas():
@@ -638,6 +738,7 @@ if modulo == "🛻 KM_DISTRIBUCIÓN":
     columnas_mostrar = [
         "Fecha",
         "Placa",
+        "Ítem de la placa",
         "Hora Inicio",
         "Km Inicial",
         "Hora Fin",
@@ -705,6 +806,28 @@ try:
     )
 
     df = preparar_datos(df)
+
+    # Identificar el ítem de cada placa únicamente
+    # en el módulo KM_DISTRIBUCIÓN.
+    if modulo == "🛻 KM_DISTRIBUCIÓN":
+
+        mapa_items = obtener_mapa_items()
+
+        df = asignar_item_a_placas(
+            df,
+            mapa_items
+        )
+
+except Exception as e:
+    st.error(
+        "❌ No se pudo conectar con Google Sheets. "
+        "Verifique los secretos, el nombre del archivo "
+        "y los permisos de la cuenta de servicio."
+    )
+
+    st.exception(e)
+    st.stop()
+
 
 except Exception as e:
     st.error(
