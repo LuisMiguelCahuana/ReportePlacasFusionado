@@ -49,8 +49,8 @@ def conectar_google():
 def obtener_hoja_distribucion():
     cliente = conectar_google()
 
-    archivo = cliente.open(
-        NOMBRE_ARCHIVO_DISTRIBUCION
+    archivo = cliente.open_by_key(
+        st.secrets["SPREADSHEET_ID_DISTRIBUCION"]
     )
 
     return archivo.worksheet(
@@ -62,11 +62,33 @@ def obtener_hoja_perdidas():
     cliente = conectar_google()
 
     archivo = cliente.open_by_key(
-        st.secrets["SPREADSHEET_ID"]
+        st.secrets["SPREADSHEET_ID_PERDIDAS"]
     )
 
-    return archivo.worksheet(
+    # Buscar la hoja ignorando espacios,
+    # guiones, guiones bajos y mayúsculas.
+    def normalizar_nombre(nombre):
+        return re.sub(
+            r"[^a-z0-9]",
+            "",
+            nombre.strip().lower()
+        )
+
+    nombre_buscado = normalizar_nombre(
         NOMBRE_HOJA_PERDIDAS
+    )
+
+    for hoja in archivo.worksheets():
+        if normalizar_nombre(hoja.title) == nombre_buscado:
+            return hoja
+
+    nombres_disponibles = [
+        hoja.title for hoja in archivo.worksheets()
+    ]
+
+    raise ValueError(
+        f"No se encontró la hoja '{NOMBRE_HOJA_PERDIDAS}'. "
+        f"Hojas disponibles: {nombres_disponibles}"
     )
 
 
@@ -643,7 +665,7 @@ if modulo == "🛻 KM_DISTRIBUCIÓN":
 
     texto_fuente = (
         "Los datos se consultan desde el archivo "
-        "KM_DISTRIBUCION, hoja Distribucion."
+        "configurado en SPREADSHEET_ID_PERDIDAS."
     )
 
 else:
