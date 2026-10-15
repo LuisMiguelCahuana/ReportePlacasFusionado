@@ -256,9 +256,7 @@ def asignar_item_a_placas_perdidas(df, mapa_items):
     )
 
     return df
-# ============================================================
-# COMPARAR PLACAS QUE NO REPORTARON KILOMETRAJE
-# ============================================================
+
 @st.cache_data(ttl=300, show_spinner=False)
 def obtener_placas_no_reportadas(
     df_reportado,
@@ -284,14 +282,21 @@ def obtener_placas_no_reportadas(
         try:
             hoja = archivo.worksheet(nombre_hoja)
 
+            # Leer desde B hasta P:
+            # B = Placa
+            # K = Unidad de Negocio
+            # P = Supervisor de la Cuadrilla
             valores = hoja.get(
-                "B2:B",
+                "B2:P",
                 value_render_option="FORMATTED_VALUE"
             )
 
             for fila in valores:
-                if not fila:
-                    continue
+                fila = list(fila)
+
+                # Completar las columnas vacías hasta P
+                if len(fila) < 15:
+                    fila += [""] * (15 - len(fila))
 
                 placa_original = str(fila[0]).strip()
                 placa_normalizada = normalizar_placa(
@@ -301,11 +306,40 @@ def obtener_placas_no_reportadas(
                 if not placa_normalizada:
                     continue
 
+                unidad_negocio = str(fila[9]).strip()
+                supervisor = str(fila[14]).strip()
+
                 if placa_normalizada not in placas_origen:
                     placas_origen[placa_normalizada] = {
                         "Placa": placa_original,
+                        "Unidad de Negocio": unidad_negocio,
+                        "Supervisor de la Cuadrilla": supervisor,
                         "Hojas de origen": []
                     }
+                else:
+                    # Completar datos si la placa aparece
+                    # en más de una hoja de origen.
+                    datos_existentes = placas_origen[
+                        placa_normalizada
+                    ]
+
+                    if (
+                        not datos_existentes["Unidad de Negocio"]
+                        and unidad_negocio
+                    ):
+                        datos_existentes[
+                            "Unidad de Negocio"
+                        ] = unidad_negocio
+
+                    if (
+                        not datos_existentes[
+                            "Supervisor de la Cuadrilla"
+                        ]
+                        and supervisor
+                    ):
+                        datos_existentes[
+                            "Supervisor de la Cuadrilla"
+                        ] = supervisor
 
                 if nombre_hoja not in placas_origen[
                     placa_normalizada
@@ -319,13 +353,17 @@ def obtener_placas_no_reportadas(
                 f"No se encontró la hoja '{nombre_hoja}'."
             )
 
-    # Placas maestras que no aparecen en el reporte
+    # Identificar las placas maestras que no reportaron
     filas = []
 
     for placa_normalizada, datos in placas_origen.items():
         if placa_normalizada not in placas_reportadas:
             filas.append({
                 "Placa": datos["Placa"],
+                "Unidad de Negocio": datos["Unidad de Negocio"],
+                "Supervisor de la Cuadrilla": datos[
+                    "Supervisor de la Cuadrilla"
+                ],
                 "Hojas de origen": " / ".join(
                     datos["Hojas de origen"]
                 ),
@@ -336,6 +374,8 @@ def obtener_placas_no_reportadas(
         filas,
         columns=[
             "Placa",
+            "Unidad de Negocio",
+            "Supervisor de la Cuadrilla",
             "Hojas de origen",
             "Estado"
         ]
@@ -347,7 +387,6 @@ def obtener_placas_no_reportadas(
         ).reset_index(drop=True)
 
     return resultado
-
 
 def mostrar_tabla_no_reportadas(df_no_reportadas, titulo):
     st.markdown("---")
