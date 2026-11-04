@@ -1079,16 +1079,19 @@ else:
     # Las opciones se extraen directamente de la columna Fecha
     # descargada desde la hoja de Google Sheets del módulo seleccionado.
     # Se conserva el texto original de Sheets; no se crean fechas nuevas.
-    fechas_disponibles_no_reporte = fechas_reales_de_sheets(df["Fecha"])
+    # Usar exactamente el mismo criterio y orden del filtro principal:
+    # valores originales de Sheets, ordenados de forma descendente.
+    fechas_disponibles_no_reporte = sorted(
+        [
+            valor for valor in df["Fecha"].unique().tolist()
+            if str(valor).strip()
+        ],
+        reverse=True,
+    )
 
     fecha_no_reporte = st.selectbox(
-        "Seleccionar fecha registrada en Google Sheets",
+        "📅 Fecha",
         options=["TODAS"] + fechas_disponibles_no_reporte,
-        format_func=lambda valor: (
-            "Todas las fechas (placas que nunca reportaron)"
-            if valor == "TODAS"
-            else valor
-        ),
         key=f"fecha_no_reporte_{modulo}",
     )
 
