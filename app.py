@@ -209,6 +209,36 @@ def normalizar_placa(valor):
     )
 
 
+def clave_fecha_sheets(valor):
+    """Convierte una fecha leída de Sheets a clave de comparación YYYY-MM-DD."""
+    if pd.isna(valor) or not str(valor).strip():
+        return ""
+    fecha = pd.to_datetime(str(valor).strip(), dayfirst=True, errors="coerce")
+    if pd.isna(fecha):
+        return ""
+    return fecha.strftime("%Y-%m-%d")
+
+
+def fechas_reales_de_sheets(serie):
+    """Devuelve los textos de fecha tal como aparecen en Google Sheets."""
+    fechas = []
+    vistos = set()
+    for valor in serie.tolist():
+        texto = str(valor).strip() if pd.notna(valor) else ""
+        if not texto:
+            continue
+        clave = clave_fecha_sheets(texto)
+        if not clave or clave in vistos:
+            continue
+        vistos.add(clave)
+        fechas.append(texto)
+    return sorted(
+        fechas,
+        key=lambda texto: clave_fecha_sheets(texto),
+        reverse=True,
+    )
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def obtener_mapa_items_perdidas():
     archivo = obtener_archivo_perdidas()
@@ -270,11 +300,12 @@ def obtener_placas_no_reportadas(
     # Comparar todas las fechas o únicamente la fecha seleccionada.
     df_comparacion = df_reportado.copy()
     if fecha_seleccionada != "TODAS" and "Fecha" in df_comparacion.columns:
-        fechas_normalizadas = pd.to_datetime(
-            df_comparacion["Fecha"], dayfirst=True, errors="coerce"
-        ).dt.strftime("%Y-%m-%d")
+        clave_seleccionada = clave_fecha_sheets(fecha_seleccionada)
+        fechas_normalizadas = df_comparacion["Fecha"].apply(
+            clave_fecha_sheets
+        )
         df_comparacion = df_comparacion[
-            fechas_normalizadas == fecha_seleccionada
+            fechas_normalizadas == clave_seleccionada
         ]
 
     placas_reportadas = set()
@@ -1045,18 +1076,18 @@ else:
     st.markdown("---")
     st.markdown("### 📅 CONSULTA DE PLACAS QUE NO REPORTARON POR FECHA")
 
-    fechas_disponibles_no_reporte = (
-        pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
-        .dropna().dt.strftime("%Y-%m-%d").drop_duplicates()
-        .sort_values(ascending=False).tolist()
-    )
+    # Las opciones se extraen directamente de la columna Fecha
+    # descargada desde la hoja de Google Sheets del módulo seleccionado.
+    # Se conserva el texto original de Sheets; no se crean fechas nuevas.
+    fechas_disponibles_no_reporte = fechas_reales_de_sheets(df["Fecha"])
+
     fecha_no_reporte = st.selectbox(
-        "Seleccionar fecha de control",
+        "Seleccionar fecha registrada en Google Sheets",
         options=["TODAS"] + fechas_disponibles_no_reporte,
         format_func=lambda valor: (
-            "Todas las fechas (nunca reportaron)"
+            "Todas las fechas (placas que nunca reportaron)"
             if valor == "TODAS"
-            else pd.to_datetime(valor).strftime("%d/%m/%Y")
+            else valor
         ),
         key=f"fecha_no_reporte_{modulo}",
     )
