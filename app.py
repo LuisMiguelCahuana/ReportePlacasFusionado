@@ -261,18 +261,27 @@ def asignar_item_a_placas_perdidas(df, mapa_items):
 def obtener_placas_no_reportadas(
     df_reportado,
     id_spreadsheet,
-    hojas_origen
+    hojas_origen,
+    fecha_seleccionada="TODAS"
 ):
     cliente = conectar_google()
     archivo = cliente.open_by_key(id_spreadsheet)
 
-    # Placas existentes en la hoja de reporte
-    placas_reportadas = set()
+    # Comparar todas las fechas o únicamente la fecha seleccionada.
+    df_comparacion = df_reportado.copy()
+    if fecha_seleccionada != "TODAS" and "Fecha" in df_comparacion.columns:
+        fechas_normalizadas = pd.to_datetime(
+            df_comparacion["Fecha"], dayfirst=True, errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+        df_comparacion = df_comparacion[
+            fechas_normalizadas == fecha_seleccionada
+        ]
 
-    if "Placa" in df_reportado.columns:
+    placas_reportadas = set()
+    if "Placa" in df_comparacion.columns:
         placas_reportadas = {
             normalizar_placa(placa)
-            for placa in df_reportado["Placa"]
+            for placa in df_comparacion["Placa"]
             if normalizar_placa(placa)
         }
 
@@ -1033,6 +1042,25 @@ else:
     # TABLA DE PLACAS QUE NO REPORTARON - AMBOS MÓDULOS
     # ============================================================
     
+    st.markdown("---")
+    st.markdown("### 📅 CONSULTA DE PLACAS QUE NO REPORTARON POR FECHA")
+
+    fechas_disponibles_no_reporte = (
+        pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
+        .dropna().dt.strftime("%Y-%m-%d").drop_duplicates()
+        .sort_values(ascending=False).tolist()
+    )
+    fecha_no_reporte = st.selectbox(
+        "Seleccionar fecha de control",
+        options=["TODAS"] + fechas_disponibles_no_reporte,
+        format_func=lambda valor: (
+            "Todas las fechas (nunca reportaron)"
+            if valor == "TODAS"
+            else pd.to_datetime(valor).strftime("%d/%m/%Y")
+        ),
+        key=f"fecha_no_reporte_{modulo}",
+    )
+
     try:
     
         if modulo == "🚗 KM_PÉRDIDAS":
@@ -1050,7 +1078,8 @@ else:
                     "Facturacion",
                     "Sedapal",
                     "Hidrandina"
-                ]
+                ],
+                fecha_seleccionada=fecha_no_reporte,
             )
     
             mostrar_tabla_no_reportadas(
@@ -1070,7 +1099,8 @@ else:
                     "ITEM_IV",
                     "ITEM_III",
                     "ITEM_II"
-                ]
+                ],
+                fecha_seleccionada=fecha_no_reporte,
             )
     
             mostrar_tabla_no_reportadas(
